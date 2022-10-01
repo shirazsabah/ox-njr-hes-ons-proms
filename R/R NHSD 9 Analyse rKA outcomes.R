@@ -368,7 +368,7 @@ tbl1 <-
       year = "Year of surgery",
       age_at_revision = "Age at first rKA (years)",
       gender = "Gender",
-      asa_grade = "ASA grade",
+      asa_grade = "ASA Class",
       charl01 = "Charlson comorbidity index",
       bmi_plaus = "Body mass index",
       ethnic5 = "Ethnicity",
