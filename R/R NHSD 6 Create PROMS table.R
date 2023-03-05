@@ -163,7 +163,7 @@ proms$epikey <- as.character(proms$epikey)
 dbWriteTable(con, "proms", proms)
 
 
-# PROMS attrition
+# PROMS attrition (Knees)
 dbGetQuery(con, "SELECT Count(*) FROM proms")
 dbGetQuery(con, "SELECT Count(*) FROM proms WHERE proms_proc_group='Knee Replacement';")
 dbGetQuery(con, "SELECT Count(*) FROM proms 
@@ -174,3 +174,17 @@ dbGetQuery(con, "SELECT COUNT (DISTINCT (epikey, fyear)) AS 'No. records'
                  FROM proms
                  WHERE proms_proc_group='Knee Replacement'
                  AND epikey IS NOT NULL;")
+
+
+# PROMS attrition (Hips)
+dbGetQuery(con, "SELECT Count(*) FROM proms")
+dbGetQuery(con, "SELECT Count(*) FROM proms WHERE proms_proc_group='Hip Replacement';")
+dbGetQuery(con, "SELECT Count(*) FROM proms 
+                 WHERE proms_proc_group='Hip Replacement'
+                 AND epikey IS NOT NULL;")
+
+dbGetQuery(con, "SELECT COUNT (DISTINCT (epikey, fyear)) AS 'No. records'
+                 FROM proms
+                 WHERE proms_proc_group='Hip Replacement'
+                 AND epikey IS NOT NULL;")
+

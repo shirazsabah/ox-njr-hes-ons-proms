@@ -71,6 +71,7 @@ The aim of this project is to create an efficient and reproducible system to cle
 `R NHSD 6 Create PROMS table`
 - Cleans NHS PROMs dataset and creates derived variables
 - Output: `proms` table in Duck DB con
+   - Note: `mic01` field is based on >=6 points (i.e. appropriate for rHR & rKR) - new fields need to be derived for pHR (>=8 points) and pKR (>=7 points)
 
 
 `R NHSD 7 Create NJR tables`

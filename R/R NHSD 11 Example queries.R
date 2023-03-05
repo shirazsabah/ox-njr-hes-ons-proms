@@ -72,6 +72,46 @@ addon <- hes %>% select(row_id, FYEAR, all_of(diagcols)) %>% collect()
 
 
 
+########################################## Export DuckDB tables to CSV ##########################################
+
+# Note that COPY seems to lose data
+# dbGetQuery(con, "COPY ph_ons_hes_proms TO 'ph_ons_hes_proms.csv' (HEADER, DELIMITER ',');")
+
+## Primary knees
+pk <- dbGetQuery(con, "SELECT * from pk_ons_hes_proms")
+
+pk <- pk %>% mutate(mic01 = case_when(ch>=7 & cca==1 ~ "Yes",
+                                            ch<7 & cca==1 ~ "No",
+                                            TRUE ~ NA_character_))
+
+pk$mic01 <- factor(pk$mic01, levels=c("Yes", "No"), ordered=TRUE, labels = c("Yes", "No")) %>% forcats::fct_explicit_na()
+
+write.csv(pk,file=paste0(data_dir,"Stata/pk_ons_hes_proms.csv"))
+
+
+## Revision knees
+rk <- dbGetQuery(con, "SELECT * from rk_ons_hes_proms")
+write.csv(rk,file=paste0(data_dir,"Stata/rk_ons_hes_proms.csv"))
+
+
+## Primary hips
+ph <- dbGetQuery(con, "SELECT * from ph_ons_hes_proms")
+
+ph <- ph %>% mutate(mic01 = case_when(ch>=8 & cca==1 ~ "Yes",
+                                      ch<8 & cca==1 ~ "No",
+                                      TRUE ~ NA_character_))
+
+ph$mic01 <- factor(ph$mic01, levels=c("Yes", "No"), ordered=TRUE, labels = c("Yes", "No")) %>% forcats::fct_explicit_na()
+
+write.csv(ph,file=paste0(data_dir,"Stata/ph_ons_hes_proms.csv"))
+
+
+## Revision hips
+rh <- dbGetQuery(con, "SELECT * from rh_ons_hes_proms")
+write.csv(rh,file=paste0(data_dir,"Stata/rh_ons_hes_proms.csv"))
+
+
+
 ########################################## Shutdown DuckDB con ##########################################
 
 dbDisconnect(con, shutdown=TRUE)
