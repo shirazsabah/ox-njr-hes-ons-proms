@@ -3,6 +3,8 @@
 p_unload(all)
 pacman::p_load(pacman, data.table, tidyverse, DBI, duckdb, tictoc, janitor, survival, KMunicate, flextable, gtsummary, stringr, logger)
 
+set_flextable_defaults(font.size = 7, padding = 0, line_spacing = 1, font.family ="Times New Roman")
+
 
 ########################################## Summary ##########################################
 
@@ -53,6 +55,15 @@ dbListTables(con)
 # Bring rhhes into environment
 rhhes <- dbGetQuery(con, "SELECT * FROM rh_ons_hes_proms")
 
+# Recode age
+rhhes$age_at_revision <- as.numeric(rhhes$age_at_revision)
+
+# Set order for ifrhier
+rhhes$ifrhier <- factor(rhhes$ifrhier,
+                        levels= c("Infection", "Malalignment/Size mismatch", "Adverse soft tissue reaction", "Loosening/Lysis",
+                                  "Component Wear/Breakage", "Dislocation/Instability", "Fracture", "Unexplained pain", "Other"),
+                        ordered=TRUE)
+
 
 
 ########################################## 1. Implant survivorship ##########################################
@@ -65,7 +76,7 @@ first_is <- rhhes
     ### nn_nid, side --> identify the hip
     ### revision_njr_index_no and revision_procedure_id --> identify the revision record
     ### op_date --> needed to calculate time to second revision (ttsr) --> second revision within 2 years (sr2y) [730 days]
-  ## Note: 
+  ## Note:
     ### This uses the dataset 'rh', which includes all rHA on the NJR
     ### i.e. Second, third, fourth, etc.
     ### Follow-up is to 31/12/2019, hence year %between% c("2009", "2019")
@@ -75,14 +86,14 @@ rh <- dbGetQuery(con, "SELECT * FROM all_rh")
 
 second_is <-
   rh %>%
-  filter(year %between% c("2009", "2019"), revno=="Second linked rHR") %>% 
-  select(nn_nid, side, revision_njr_index_no, revision_procedure_id, op_date) %>% 
+  filter(year %between% c("2009", "2019"), revno=="Second linked rHR") %>%
+  select(nn_nid, side, revision_njr_index_no, revision_procedure_id, op_date) %>%
   rename(op_date_2 = op_date, revision_njr_index_no_2 = revision_njr_index_no, revision_procedure_id_2 = revision_procedure_id)
 
 # Merge first and second rHA
 # However, there are some (likely) duplicates when time to second rHA = 0 days
 first_is <-
-  merge(first_is, second_is, by=c("nn_nid", "side"), all.x = TRUE) %>% 
+  merge(first_is, second_is, by=c("nn_nid", "side"), all.x = TRUE) %>%
   mutate(ttsr = as.numeric(op_date_2 - op_date)) %>%
   mutate(ttsr = case_when(ttsr == 0 ~ NA_real_,
                           TRUE ~ ttsr))
@@ -90,14 +101,14 @@ first_is <-
 # Create table of third revisions
 third_is <-
   rh %>%
-  filter(year %between% c("2009", "2019"), revno=="Third or more linked rHR") %>% 
+  filter(year %between% c("2009", "2019"), revno=="Third or more linked rHR") %>%
   select(nn_nid, side, revision_njr_index_no, revision_procedure_id, op_date) %>%
-  group_by(nn_nid, side) %>% 
+  group_by(nn_nid, side) %>%
   arrange(op_date) %>%
-  mutate(row = row_number()) %>% 
+  mutate(row = row_number()) %>%
   filter(row ==1) %>%
-  select(-row) %>% 
-  ungroup() %>% 
+  select(-row) %>%
+  ungroup() %>%
   rename(op_date_3 = op_date, revision_njr_index_no_3 = revision_njr_index_no, revision_procedure_id_3 = revision_procedure_id)
 
 # Merge third revisions
@@ -106,20 +117,20 @@ first_is <-
 
 # When is.na(ttsr), see if there is a third revision
 first_is <-
-  first_is %>% 
+  first_is %>%
   mutate(ttsr = case_when(is.na(ttsr) ~ as.numeric(op_date_3 - op_date),
-                          TRUE ~ ttsr)) 
+                          TRUE ~ ttsr))
 
 # Remove duplicates again, where ttsr==0
 first_is <-
-  first_is %>% 
+  first_is %>%
   mutate(ttsr = case_when(ttsr == 0 ~ NA_real_,
                           TRUE ~ ttsr))
 
 
 # Create field for re-revised/not within 2 years
 first_is <-
-  first_is %>% 
+  first_is %>%
   mutate(sr2y = case_when(ttsr < 730 ~ 1,
                           TRUE ~ 0))
 
@@ -128,9 +139,9 @@ first_is <-
 
 # Calculate revision rate at 2 years by diagnosis
 is2y <-
-first_is %>% tabyl(sr2y, ifrhier) %>% 
-  adorn_percentages("col") %>% 
-  adorn_pct_formatting(digits = 2) %>% 
+first_is %>% tabyl(sr2y, ifrhier) %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
   adorn_ns()
 
 
@@ -150,7 +161,7 @@ first_is <- first_is %>% mutate(ffu = as.Date('2019-12-31'))
     ## We will (initially) ignore patients who died before re-revision
 
 first_is <-
-  first_is %>% 
+  first_is %>%
   mutate(outcome = case_when(
     op_date_2 < ffu ~ "Re-revised",
     dod < ffu ~ "Dead",
@@ -158,11 +169,11 @@ first_is <-
 
 # Tag those who died before re-revision
 first_is <-
-  first_is %>% 
+  first_is %>%
   mutate(dbrr = case_when(dod < op_date_2 ~ 1, TRUE ~0))
 
 # None found
-first_is %>% 
+first_is %>%
   tabyl(dbrr)
 
 # Create follow-up field
@@ -172,7 +183,7 @@ str(first_is$dod)
 str(first_is$ffu)
 
 first_is <-
-  first_is %>% 
+  first_is %>%
   mutate(fu = case_when(
     outcome == "Re-revised" ~ op_date_2 - op_date,
     outcome == "Dead" ~ dod - op_date,
@@ -180,7 +191,7 @@ first_is <-
 
 # Count records with follow-up <=0
 first_is %>% filter(fu <=0) %>% count()
-  
+
 # Remove records with follow-up <=0
 first_is <-
   first_is %>% filter(!fu <=0)
@@ -190,7 +201,7 @@ first_is$fu <- as.numeric(first_is$fu)/365.25
 
 # Create outcome field for survival analysis
 first_is <-
-  first_is %>% 
+  first_is %>%
   mutate(outcome_sa = case_when(
     outcome == "Re-revised" ~ 1,
     TRUE ~ 0))
@@ -198,7 +209,11 @@ first_is <-
 # Survival graphs
 # Edit the KMunicate function for this session only
 trace("KMunicate",edit=TRUE)
-# Change ylim on L81 manually to c(0,0.3)
+# Change ylim on L81 manually to c(0,30)
+# Change L53-55
+# data$surv <- (1 - data$surv) * 100
+# data$lower <- (1 - data$lower) * 100
+# data$upper <- (1 - data$upper) * 100
 
 # Plot one survival graph with all the different indications for rHA
 KM <- survfit(Surv(fu, outcome_sa) ~factor(ifrhier), data=first_is)
@@ -207,7 +222,7 @@ p <- KMunicate(fit = KM, time_scale = time_scale,
           .risk_table = NULL,
           .reverse = TRUE,
           .xlab = "Time (years)",
-          .ylab = "Cumulative incidence of re-revision",
+          .ylab = "Cumulative incidence of re-revision (%)",
           .alpha = 0 # To make confidence intervals completely transparent!
           ) 
 
@@ -217,35 +232,35 @@ p <- p + theme(legend.position="right")
 
 setwd(paste0(data_dir,"FIGS/proms-rfr-hip/"))
 
-rfr <- c("Infection", "Malalignment/Size mismatch", "Adverse soft tissue reaction", "Loosening/Lysis", "Component Wear/Breakage", "Dislocation/Instability", "Fracture", "Unexplained pain", "Other")
-
-for (val in rfr) {
+for (i in seq_along(levels(first_is$ifrhier))) {
   
-  KMfilt <- first_is %>% filter(ifrhier == val)
+  KMfilt <- first_is %>% filter(ifrhier == levels(first_is$ifrhier)[i])
   
   KMrfr <- survfit(Surv(fu, outcome_sa) ~1, data=KMfilt)
   time_scale <- seq(0, ceiling(max(KMfilt$fu)), by=1)
   p_rfr <- KMunicate(fit = KMrfr, time_scale = time_scale,
+                     .risk_table = "survfit",
                      .risk_table_base_size = 10, # Include a table below graph of number at-risk
                      .rel_heights = c(1, 0.25), # This plots the graph as 100% size, and the table below it as 25% size
-                 .reverse = TRUE,
-                 .xlab = "Time (years)",
-                 .ylab = "Cumulative incidence of re-revision",
-                 .alpha = 0.4)
-
+                     .reverse = TRUE,
+                     .xlab = "Time (years)",
+                     .ylab = "Cumulative incidence of re-revision (%)",
+                     .alpha = 0.4)
+  
   plotlist = list()
   plotlist[[1]] = p_rfr
   
-  for(i in 1:1) {
-    ggsave(plot = plotlist[[i]], 
+  for(j in 1:1) {
+    ggsave(plot = plotlist[[j]], 
            width = 200,
            height = 200,
            units = "mm",
            dpi = 1000,
            bg = 'white',
-           file = paste("Fig",substr(val, 1, 5),".png",sep=""))
+           file = paste("Fig",substr(levels(first_is$ifrhier)[i], 1, 5),".png",sep=""))
   }
 }
+
 
 # Survival tables
 # # NB: This code outputs all data (events/censoring)
@@ -359,7 +374,7 @@ tbl1 <-
     missing = "no",
     type = all_continuous() ~ "continuous2",
     statistic = list(
-      all_continuous() ~ c("{mean} ({sd})",
+      all_continuous() ~ c("{mean} ± {sd}",
                            "{N_miss} ({p_miss}%)"),
       all_categorical(dichotomous = FALSE) ~ "{n} ({p}%)",
       all_dichotomous() ~ "{n} ({p}%)"),
@@ -371,7 +386,10 @@ tbl1 <-
       charl01 = "Charlson comorbidity index",
       bmi_plaus = "Body mass index",
       ethnic5 = "Ethnicity",
-      imd5 = "Index of multiple deprivation")) %>%
+      imd5 = "Index of multiple deprivation"),
+    digits = list(
+      all_categorical() ~ c(0, 0),
+      all_continuous() ~ c(1,1,0,0))) %>%
   add_overall() %>%
   bold_labels() %>%
   italicize_levels()
@@ -677,8 +695,6 @@ comb_tbl <-
 
 comb_tbl <- comb_tbl %>% replace(is.na(.), "")
   
-  
-set_flextable_defaults(font.size = 7, padding = 0, line_spacing = 1)
 theme_gtsummary_compact()
 comb_tbl_flex <- flextable(comb_tbl)
 comb_tbl_flex <- add_header_row(comb_tbl_flex, values = c("","Indication for revision"), colwidths = c(2,9))
@@ -709,8 +725,15 @@ proms %>% count()
 ## Prep
 p_load(gtsummary, flextable)
 
+proms <- proms %>%
+  mutate(
+    q1_eq5d_health_scale = ifelse(q1_eq5d_health_scale == 999, NA, q1_eq5d_health_scale),
+    q2_eq5d_health_scale = ifelse(q2_eq5d_health_scale == 999, NA, q2_eq5d_health_scale),
+    ch_eq_vas = ifelse(!is.na(q1_eq5d_health_scale) & !is.na(q2_eq5d_health_scale), q2_eq5d_health_scale - q1_eq5d_health_scale, NA)
+  )
+
 # Select variables
-t4 = proms %>% filter(!is.na(proms_serial_no)) %>% select("hr_q1_score", "hr_q2_score", "ch", "mic01", "q1_eq5d_index", "q2_eq5d_index", "eq5d_index_change", "q2_satisfaction", "q2_success", "ifrhier") %>% droplevels()
+t4 = proms %>% filter(!is.na(proms_serial_no)) %>% select("hr_q1_score", "hr_q2_score", "ch", "mic01", "q1_eq5d_index", "q2_eq5d_index", "eq5d_index_change", "q1_eq5d_health_scale", "q2_eq5d_health_scale", "ch_eq_vas", "q2_satisfaction", "q2_success", "ifrhier") %>% droplevels()
 
 tbl4 <- 
   tbl_summary(
@@ -720,28 +743,36 @@ tbl4 <-
     type = list(
       c(all_continuous(), q1_eq5d_index,q2_eq5d_index, eq5d_index_change) ~ "continuous2"),
     statistic = list(
-      c(all_continuous(),-c(q1_eq5d_index,q2_eq5d_index, eq5d_index_change)) ~ c("{mean} ({sd})",
+      c(all_continuous(),-c(q1_eq5d_index,q2_eq5d_index, eq5d_index_change)) ~ c("{mean} ± {sd}",
                                                                                  "{N_miss} ({p_miss}%)"),
       c(q1_eq5d_index,q2_eq5d_index, eq5d_index_change) ~ c("{median} ({p25}, {p75})",
                                                             "{N_miss} ({p_miss}%)"),
       all_categorical(dichotomous = FALSE) ~ "{n} ({p}%)",
       all_dichotomous() ~ "{n} ({p}%)"),
     label = list(
-      age_at_revision = "Age (years)",
-      gender = "Gender",
-      hr_q1_score = "Pre-operative OHS",
-      hr_q2_score = "Post-operative OHS",
+      hr_q1_score = "Preop. OHS",
+      hr_q2_score = "Postop. OHS",
       ch = "Change in OHS",
-      mic01 = "Responder",
-      q1_eq5d_index = "Pre-operative EQ-5D utility",
-      q2_eq5d_index = "Post-operative EQ-5D utility",
-      eq5d_index_change = "Change in EQ-5D utility",
-      q2_satisfaction = "Patient satisfaction",
-      q2_success = "Perceived success")) %>%
+      mic01 = "Responder (no. of patients)",
+      q1_eq5d_index = "Preop. EQ-5D",
+      q2_eq5d_index = "Postop. EQ-5D",
+      eq5d_index_change = "Change in EQ-5D",
+      q1_eq5d_health_scale = "Preop. EQ-VAS",
+      q2_eq5d_health_scale = "Postop. EQ-VAS",
+      ch_eq_vas = "Change in EQ-VAS",
+      q2_satisfaction = "Patient satisfaction (no. of patients)",
+      q2_success = "Perceived success (no. of patients)"),
+    digits = list(
+      all_continuous() ~ c(1,1,0,0),
+      all_categorical() ~ c(0, 0),
+      c(q1_eq5d_index,q2_eq5d_index, eq5d_index_change) ~ c(3,3,3,0,0))
+    ) %>%
   add_overall() %>%
   bold_labels() %>%
   italicize_levels() %>% 
-  add_stat_label(label = c(q1_eq5d_index,q2_eq5d_index, eq5d_index_change) ~ c("Median (Q1, Q3)", "N missing (% missing)")) #%>%
+  add_stat_label(label = list(
+    c(q1_eq5d_index,q2_eq5d_index, eq5d_index_change) ~ c("Utility§", "Data missing (no. of patients)"),
+    c(hr_q1_score, hr_q2_score, ch, q1_eq5d_health_scale, q2_eq5d_health_scale, ch_eq_vas) ~ c("Score‡ (points)", "Data missing (no. of patients)"))) #%>%
   #modify_header(all_stat_cols(FALSE) ~ "**{level}**", stat_0 ~ "**Overall**")
 
 tbl4_flex <- tbl4 %>% as_flex_table()
@@ -780,7 +811,9 @@ tbl6 <-
     statistic = list(
       all_dichotomous() ~ "{n}/{N} ({p}%)"),
     label = list(
-      promyn = "PROM records linked")) %>%
+      promyn = "PROM records linked † (no. of patients)"),
+    digits = list(
+      all_dichotomous() ~ c(0,0,0))) %>%
   add_overall() %>%
   bold_labels() %>%
   italicize_levels() %>% 
@@ -798,13 +831,65 @@ tbl7_flex <- tbl7 %>% as_flex_table()
 
 # Selected 95% CIs for results
 p_load(Hmisc)
-round(binconf(73, 95, alpha = 0.05),2)
+round(binconf(922, 1200, alpha = 0.05),2)
+round(binconf(320, 705, alpha = 0.05),2)
+round(binconf(483, 705, alpha = 0.05),2)
+round(binconf(86, 130, alpha = 0.05),2)
+
+
+
+## Baseline characteristics of patients undergoing first rTHA according to the ability to link to the patient-reported outcome measures (PROMs) dataset
+
+t1 <- first_is %>% select(age_at_revision, gender, asa_grade, charl01, bmi_plaus, ethnic5, imd5, year, ifrhier, proms_serial_no) %>% droplevels()
+
+t1 <- t1 %>% 
+  mutate(prom_yn = case_when(is.na(proms_serial_no) ~ "No",
+                             TRUE ~"Yes")) %>% 
+  select(-proms_serial_no)
+
+theme_gtsummary_compact()
+
+tbl_prom_response <-
+  t1 %>% 
+  tbl_strata(
+    strata = "ifrhier",
+    ~.x %>%
+      tbl_summary(
+        by = c("prom_yn"), # split table by group
+        missing = "no",
+        type = all_continuous() ~ "continuous2",
+        statistic = list(
+          all_continuous() ~ c("{mean} ({sd})",
+                               "{N_miss} ({p_miss}%)"),
+          all_categorical(dichotomous = FALSE) ~ "{n} ({p}%)",
+          all_dichotomous() ~ "{n} ({p}%)"),
+        label = list(
+          year = "Year of surgery",
+          age_at_revision = "Age at first rHA (years)",
+          gender = "Gender",
+          asa_grade = "ASA Class",
+          charl01 = "Charlson comorbidity index",
+          bmi_plaus = "Body mass index",
+          ethnic5 = "Ethnicity",
+          imd5 = "Index of multiple deprivation"),
+        digits = list(
+          all_categorical() ~ c(0, 0),
+          all_continuous() ~ c(1,1,0,0))) %>%
+      modify_header(all_stat_cols() ~ "**{level} n={n}**") %>% 
+      bold_labels() %>%
+      italicize_levels()
+  )
+
+
+tbl_pr <- tbl_prom_response %>% as_flex_table()
+
 
 
 ########################################## Shutdown DuckDB con ##########################################
 
 # Shutdown database
 dbDisconnect(con, shutdown=TRUE)
+rm(con)
 
 
 
@@ -831,4 +916,51 @@ for(i in 1:1) {
          dpi = 1000,
          file = paste("file",i,".png",sep=""))
 }
+
+
+########################################## Export tables ##########################################
+
+setwd(paste0(data_dir,"TABLES/"))
+
+library(officer)
+library(flextable)
+
+
+
+## Table 1
+
+# Define the section properties
+sect_properties <- prop_section(page_size = page_size(orient = "landscape", width = 8.3, height = 11.7), type = "continuous", page_margins = page_mar())
+
+# Set the file path where you want to save the .docx file
+file_path <- "Table 1.docx"
+
+# Save the table directly to the named file
+save_as_docx(tbl1_flex, path = file_path, pr_section = sect_properties)
+
+## Table 2
+file_path <- "Table 2.docx"
+save_as_docx(comb_tbl_flex, path = file_path, pr_section = sect_properties)
+
+## Table 3
+file_path <- "Table 3.docx"
+save_as_docx(tbl7_flex, path = file_path, pr_section = sect_properties)
+
+
+## Appendix A - Diagnosis hierarchy for rHA
+# Created in MS Word
+
+## Appendix C Table 1
+file_path <- "App C Table 1.docx"
+save_as_docx(tbl_pr, path = file_path, pr_section = sect_properties)
+
+## Appendix C Table 2
+file_path <- "App C Table 2.docx"
+save_as_docx(tbl5_flex, path = file_path, pr_section = sect_properties)
+
+## Appendix D Table 1
+file_path <- "App D Table 1.docx"
+save_as_docx(los_flex, path = file_path, pr_section = sect_properties)
+
+
 

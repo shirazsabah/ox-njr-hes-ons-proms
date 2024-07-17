@@ -4,7 +4,7 @@
 ########################################## Create NJR tables ##########################################
 
 # Load rHR data
-p_unload(all)
+# p_unload(all)
 pacman::p_load(pacman, data.table, rio, tidyverse, logger)
 setwd(data_dir)
 setDTthreads(10)
@@ -118,6 +118,7 @@ rh <- rh %>% group_by(nn_nid, side) %>% mutate(linked = max(dummy_revno))
 
 # If it did link, then revno == seq
 # Else, code it as 0
+rh <- rh %>% ungroup()
 rh <- rh %>% mutate(revno = case_when(linked ==1 ~ seq, TRUE ~ 0L))
 
 # Re-code as 0,1,2,3 and create factor
@@ -125,33 +126,21 @@ rh <- rh %>% mutate(revno = case_when(revno >3 ~ 3L, TRUE ~ revno))
 
 rh$revno <- factor(rh$revno, levels=c(1,2,3,0), ordered=TRUE, labels = c("First rHR", "Second rHR", "Third or more rHR", "No linked primary"))
 
-rh <- as.data.frame(rh)
+setDT(rh)
 
 # Now, reprocess the data, considering staged revisions to be a single procedure if: (a) ITT as staged and (b) second stage <365 days
 # We will only analyse the outcome of first-linked rHR performed as a single-stage procedure
 # However, multi-stage procedures must remain in the dataset to calculate individual consultant and surgical unit caseloads
 
 rh1 <-
-  rh %>% 
-  group_by(nn_nid, side) %>% 
-  arrange(nn_nid, side, op_date) %>% 
-  mutate(prev_proc = lag(procedure_type, n=1, default = NA)) %>% 
-  mutate(date_prev = lag(op_date, n=1, default = NA)) %>% 
-  mutate(date_diff = op_date - date_prev) %>% 
-  mutate(toseq = case_when(
-    procedure_type == "Hip Stage 2 of 2 Stage Revision" & date_diff <365 & prev_proc == "Hip Stage 1 of 2 Stage Revision" ~ 0,
-    procedure_type == "Hip Re-operation other than Revision" ~0,
-    TRUE ~ 1)) %>%
-  filter(toseq==1) %>%
-  arrange(nn_nid, side, op_date) %>% 
-  group_by(nn_nid, side) %>% 
-  mutate(seq1 = case_when(
-    revno == "No linked primary" ~ 0L,
-    TRUE ~ row_number())) %>% 
-  mutate(revno = seq1) %>% 
-  mutate(revno = case_when(revno >3 ~ 3L, TRUE ~ revno)) %>%
-  ungroup() %>% 
-  select(revision_njr_index_no, revision_procedure_id, revno, seq1)
+  rh[, `:=`(prev_proc = shift(procedure_type, n = 1, fill = NA, type = "lag")), by = .(nn_nid, side)][
+    , `:=`(date_prev = shift(op_date, n = 1, fill = NA, type = "lag")), by = .(nn_nid, side)][
+      , `:=`(date_diff = op_date - date_prev), by = .(nn_nid, side)][
+        , `:=`(toseq = fcase(procedure_type == "Hip Stage 2 of 2 Stage Revision" & date_diff < 365 & prev_proc == "Hip Stage 1 of 2 Stage Revision", 0, procedure_type == "Hip Re-operation other than Revision", 0, rep(TRUE, .N), 1)), by = .(nn_nid, side)][
+          toseq == 1][
+            , `:=`(seq1 = fcase(revno == "No linked primary", 0L, rep(TRUE, .N), seq_len(.N))), by = .(nn_nid, side)][, `:=`(revno = seq1)][
+              , `:=`(revno = fcase(revno > 3, 3L, rep(TRUE, .N), revno))][
+                , .(revision_njr_index_no, revision_procedure_id, revno, seq1)]
 
 rh1$revno <- factor(rh1$revno, levels=c(1,2,3,0), ordered=TRUE, labels = c("First linked rHR", "Second linked rHR", "Third or more linked rHR", "No linked primary"))
 
@@ -161,9 +150,13 @@ rh <- merge(rh, rh1, by=c("revision_njr_index_no", "revision_procedure_id"), all
 rm(rh1)
 
 # Need to convert some cols from factor to int first
-p_load(magrittr)
-cols = c("ind_rev_periprosthetic_fracture_socket", "ind_rev_periprosthetic_fracture_stem", "ind_rev_peri_prosthetic_fracture", "ind_rev_dislocation_subluxation", "ind_rev_dissociation_of_liner", "ind_rev_wear_of_polyethylene_component", "ind_rev_wear_of_acetabular_component", "ind_rev_implant_fracture_stem", "ind_rev_implant_fracture_socket", "ind_rev_implant_fracture_head", "ind_rev_aseptic_loosening_stem", "ind_rev_aseptic_loosening_socket", "ind_rev_mds1aseptic_loosening", "ind_rev_lysis_stem", "ind_rev_lysis_socket", "ind_rev_mds1lysis", "ind_rev_adverse_soft_tissue_reaction_to_particle_debris", "ind_rev_incorrect_sizing_head", "ind_rev_incorrect_sizing_socket", "ind_rev_mds1incorrect_sizing", "ind_rev_incorrect_sizing", "ind_rev_malalignment_socket", "ind_rev_malalignment_stem", "ind_rev_malalignment", "ind_rev_infection")
-rh[,cols] %<>% lapply(function(x) as.numeric(as.character(x)))
+changeCols = c("ind_rev_periprosthetic_fracture_socket", "ind_rev_periprosthetic_fracture_stem", "ind_rev_peri_prosthetic_fracture", "ind_rev_dislocation_subluxation", "ind_rev_dissociation_of_liner", "ind_rev_wear_of_polyethylene_component", "ind_rev_wear_of_acetabular_component", "ind_rev_implant_fracture_stem", "ind_rev_implant_fracture_socket", "ind_rev_implant_fracture_head", "ind_rev_aseptic_loosening_stem", "ind_rev_aseptic_loosening_socket", "ind_rev_mds1aseptic_loosening", "ind_rev_lysis_stem", "ind_rev_lysis_socket", "ind_rev_mds1lysis", "ind_rev_adverse_soft_tissue_reaction_to_particle_debris", "ind_rev_incorrect_sizing_head", "ind_rev_incorrect_sizing_socket", "ind_rev_mds1incorrect_sizing", "ind_rev_incorrect_sizing", "ind_rev_malalignment_socket", "ind_rev_malalignment_stem", "ind_rev_malalignment", "ind_rev_infection")
+rh[,(changeCols):= lapply(.SD, function(x) as.numeric(as.character(x))), .SDcols = changeCols]
+
+# rh %>% 
+#   select(all_of(changeCols)) %>% 
+#   map(., ~janitor::tabyl(.))
+
 
 # Include 'Not specified' in with 'Other'
 rh <-
@@ -212,16 +205,74 @@ first_rh %>% count()
 
 ########################################## Bring NJR tables into DuckDB ##########################################
 
-p_load(DBI, duckdb)
+pacman::p_load(DBI, duckdb)
 
-## rHR tables
-# First rh in timeframe
-# Create start/end fields as +/- 7 day timeframe on which to perform a join to HES
-setDT(first_rh)[, start := op_date -7]
-setDT(first_rh)[, end := op_date +7]
+# ## rHR tables
+# # First rh in timeframe
+# # Create start/end fields as +/- 7 day timeframe on which to perform a join to HES
+# setDT(first_rh)[, start := op_date -7]
+# setDT(first_rh)[, end := op_date +7]
 
-dbWriteTable(con, "first_rh", first_rh)
-dbWriteTable(con, "all_rh", rh)
-dbWriteTable(con, "ph", ph)
+ph <- as.data.frame(ph)
+first_rh <- as.data.frame(first_rh)
+rh <- as.data.frame(rh)
+
+
+# write.csv(ph,file=paste0(data_dir,"/EXPORT/ph.csv"))
+# write.csv(first_rh,file=paste0(data_dir,"/EXPORT/first_rh.csv"))
+# write.csv(rh,file=paste0(data_dir,"/EXPORT/rh.csv"))
+
+# Connect to database
+con = dbConnect(duckdb::duckdb(), dbdir=paste0(data_dir,"SQL/ss.duckdb"), read_only=FALSE)
 
 dbListTables(con)
+
+# This work-around is needed for some bad unicode (rather than just writing table directly)
+
+# save.image(paste0(data_dir,"R_IMAGES/hips.RData"))
+# load(file=paste0(data_dir,"R_IMAGES/hips.RData"))
+
+rh <- rh %>% select(-date_diff)
+rh <- rh %>% rename(gender = patient_gender.x)
+rh <- rh %>% rename(gender2 = patient_gender.y)
+# Drop all ind_rev fields
+columns_to_remove <- grep("ind_rev", names(rh))
+rh <- rh[,-columns_to_remove]
+
+write.csv(ph, paste0(data_dir,"EXPORT/ph.csv"), row.names=FALSE)
+write.csv(rh, paste0(data_dir,"EXPORT/all_rh.csv"), row.names=FALSE)
+write.csv(first_rh, paste0(data_dir,"EXPORT/first_rh.csv"), row.names=FALSE)
+
+dbExecute(con, paste0("CREATE TABLE ph AS SELECT * FROM read_csv_auto('", data_dir,"EXPORT/ph.csv', ALL_VARCHAR=1, header=TRUE)"))
+dbExecute(con, paste0("CREATE TABLE all_rh AS SELECT * FROM read_csv_auto('", data_dir,"EXPORT/all_rh.csv', ALL_VARCHAR=1, header=TRUE)"))
+dbExecute(con, paste0("CREATE TABLE first_rh AS SELECT * FROM read_csv_auto('", data_dir,"EXPORT/first_rh.csv', ALL_VARCHAR=1, header=TRUE)"))
+
+dbExecute(con, "UPDATE ph SET primary_op_date= NULL WHERE primary_op_date = 'NA';")
+dbExecute(con, "UPDATE ph SET revision_date= NULL WHERE revision_date = 'NA';")
+dbExecute(con, "ALTER TABLE ph ALTER primary_op_date TYPE DATE;")
+dbExecute(con, "ALTER TABLE ph ALTER revision_date TYPE DATE;")
+
+dbExecute(con, "UPDATE all_rh SET primary_op_date= NULL WHERE primary_op_date = 'NA';")
+dbExecute(con, "UPDATE all_rh SET date_prev= NULL WHERE date_prev = 'NA';")
+dbExecute(con, "ALTER TABLE all_rh ALTER op_date TYPE DATE;")
+dbExecute(con, "ALTER TABLE all_rh ALTER primary_op_date TYPE DATE;")
+dbExecute(con, "ALTER TABLE all_rh ALTER date_prev TYPE DATE;")
+
+dbExecute(con, "UPDATE first_rh SET primary_op_date= NULL WHERE primary_op_date = 'NA';")
+dbExecute(con, "UPDATE first_rh SET op_date= NULL WHERE op_date = 'NA';")
+dbExecute(con, "UPDATE first_rh SET date_prev= NULL WHERE date_prev = 'NA';")
+dbExecute(con, "ALTER TABLE first_rh ALTER primary_op_date TYPE DATE;")
+dbExecute(con, "ALTER TABLE first_rh ALTER op_date TYPE DATE;")
+dbExecute(con, "ALTER TABLE first_rh ALTER date_prev TYPE DATE;")
+
+# # Find columns that end with...
+# rh %>%
+#   select(ends_with(".y")) %>% 
+#   head()
+
+
+
+########################################## Shutdown DuckDB con ##########################################
+
+# Shutdown database
+dbDisconnect(con, shutdown=TRUE)

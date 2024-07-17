@@ -16,6 +16,9 @@ dbExecute(con, "PRAGMA memory_limit='32GB'")
 # Check tables have loaded as expected
 dbListTables(con)
 
+# # Describe
+# desc <- dbGetQuery(con, "DESCRIBE;")
+
 ########################################## Merge ph to ONS ##########################################
 
 # Keep the first ph for a given patient
@@ -142,7 +145,8 @@ df <- dbGetQuery(con, "SELECT * FROM temp3")
 cci <- df %>% select(primary_njr_index_no, primary_procedure_id, cm5y1, cm5y2, cm5y3, cm5y4, cm5y5, cm5y6, cm5y7, cm5y8, cm5y9, cm5y10, cm5y11, cm5y12, cm5y13, cm5y14, cm5y15, cm5y16, cm5y17)
 
 # Convert logical to numeric
-cci <- cci *1
+cci <- cci %>% 
+  mutate(across(everything(), as.numeric))
 cci <- cci %>% mutate(cm5y18 = case_when(cm5y11 >0 & cm5y15 >0 ~ 0,
                                          TRUE ~ cm5y11))
 
@@ -234,13 +238,6 @@ df <-
                                primary_bmi >80 ~ NA_real_,
                                TRUE ~ primary_bmi))
 
-
-# There are two epikey fields, so it will not write to DuckDB
-df %>% filter(!is.na(`epikey:1`)) %>% count()
-df %>% filter(!is.na(EPIKEY)) %>% count()
-
-# Keep the one with more information, which is the uppercase one
-df <- df %>% select(-`epikey:1`)
 
 ## Convert epikey to character before writing table
 df$EPIKEY <- as.character(df$EPIKEY)

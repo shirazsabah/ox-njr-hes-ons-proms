@@ -1,6 +1,6 @@
 # R NHSD 3 Set schema for HES
 
-p_load(duckdb, DBI, tictoc, data.table, arrow, dplyr, logger)
+pacman::p_load(pacman, duckdb, DBI, tictoc, data.table, arrow, dplyr, logger)
 
 log_info('Create in-memory HES dataset')
 

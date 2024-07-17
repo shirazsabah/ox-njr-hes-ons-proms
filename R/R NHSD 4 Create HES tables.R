@@ -439,17 +439,20 @@ dbRemoveTable(con, "APC")
 # dbRemoveTable(con, "APCS")
 
 
-# Count number of CIPS in following 90 days
-dbExecute(con, "CREATE TABLE APC AS
-          SELECT *,
-          approx_count_distinct(cips_id) over ninety AS ncips90d
-          FROM APCC
-              WINDOW ninety AS (
-              PARTITION BY study_id
-              ORDER BY admidate_filled ASC
-              RANGE BETWEEN INTERVAL 0 DAYS PRECEDING
-                       AND INTERVAL 90 DAYS FOLLOWING)
-          ORDER BY study_id, admidate_filled")
+# # Count number of CIPS in following 90 days
+# dbExecute(con, "CREATE TABLE APC AS
+#           SELECT *,
+#           approx_count_distinct(cips_id) over ninety AS ncips90d
+#           FROM APCC
+#               WINDOW ninety AS (
+#               PARTITION BY study_id
+#               ORDER BY admidate_filled ASC
+#               RANGE BETWEEN INTERVAL 0 DAYS PRECEDING
+#                        AND INTERVAL 90 DAYS FOLLOWING)
+#           ORDER BY study_id, admidate_filled")
+
+dbExecute(con, "ALTER TABLE APCC RENAME TO APC;")
+
 
 # Count n distinct patients
 dbGetQuery(con, "SELECT COUNT ( DISTINCT study_id ) AS n_pts FROM hes_table;")

@@ -16,6 +16,8 @@ dbExecute(con, "PRAGMA memory_limit='32GB'")
 # Check tables have loaded as expected
 dbListTables(con)
 
+
+
 ########################################## Merge first rk to ONS ##########################################
 
 # Note: These are already the 'first' first_rk for a given patient
@@ -49,6 +51,7 @@ dbExecute(con, "CREATE TABLE temp AS
 
 
 # Create a date diff field
+dbExecute(con, "ALTER TABLE temp DROP COLUMN date_diff;")
 dbExecute(con, "ALTER TABLE temp ADD COLUMN date_diff INTEGER;")
 dbExecute(con, "UPDATE temp SET date_diff = ABS(op_date - admidate_filled);")
 
@@ -216,12 +219,9 @@ df <- df %>%
 df$ifrhier2 <- factor(df$ifrhier2, levels=c("Infection", "Malalignment", "Loosening/Lysis", "Instability", "Fracture", "Progressive Arthritis", "Stiffness", "Unexplained pain", "Other"), ordered=TRUE) 
 
 
-# There are two epikey fields, so it will not write to DuckDB
-df %>% filter(!is.na(`epikey:1`)) %>% count()
-df %>% filter(!is.na(EPIKEY)) %>% count()
-
-# Keep the one with more information, which is the uppercase one
-df <- df %>% select(-`epikey:1`)
+# # On old versions of duckdb it will not write due to two epikey fields named the same. This is no longer the case.
+# df %>% filter(!is.na(epikey_1)) %>% count()
+# df %>% filter(!is.na(EPIKEY)) %>% count()
 
 ## Convert epikey to character before writing table
 df$EPIKEY <- as.character(df$EPIKEY)
@@ -243,3 +243,4 @@ rm(df, cci)
 
 # Shutdown database
 dbDisconnect(con, shutdown=TRUE)
+rm(con)

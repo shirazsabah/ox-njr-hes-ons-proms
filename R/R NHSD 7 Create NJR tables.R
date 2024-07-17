@@ -4,7 +4,7 @@
 ########################################## Create NJR tables ##########################################
 
 # Load rKR data
-p_unload(all)
+# p_unload(all)
 pacman::p_load(pacman, data.table, rio, tidyverse, logger)
 setwd(data_dir)
 setDTthreads(10)
@@ -110,14 +110,15 @@ pk_id <- pk_id %>% mutate(seq = 1)
 # Merge rk to pk_id
 rk <- merge(rk, pk_id, by=c("nn_nid", "side", "seq"), all.x = TRUE)
 
-# The first revision with a linked primary should be labelled revno==1
+# Those revisions with a linked primary should be labelled revno==1
 rk <- rk %>% mutate(dummy_revno = case_when(!is.na(primary_njr_index_no) ~ 1, TRUE ~ 0))
 
-# For a given nn_nid, side - Did the first rKR link to a primary?
+# For a given nn_nid, side - label the linked revisions
 rk <- rk %>% group_by(nn_nid, side) %>% mutate(linked = max(dummy_revno))
 
 # If it did link, then revno == seq
 # Else, code it as 0
+rk <- rk %>% ungroup()
 rk <- rk %>% mutate(revno = case_when(linked ==1 ~ seq, TRUE ~ 0L))
 
 # Re-code as 0,1,2,3 and create factor
@@ -125,32 +126,21 @@ rk <- rk %>% mutate(revno = case_when(revno >3 ~ 3L, TRUE ~ revno))
 
 rk$revno <- factor(rk$revno, levels=c(1,2,3,0), ordered=TRUE, labels = c("First rKR", "Second rKR", "Third or more rKR", "No linked primary"))
 
-rk <- as.data.frame(rk)
+setDT(rk)
 
 # Now, reprocess the data, considering staged revisions to be a single procedure if: (a) ITT as staged and (b) second stage <365 days
 # We will only analyse the outcome of first-linked rKR performed as a single-stage procedure
 # However, multi-stage procedures must remain in the dataset to calculate individual consultant and surgical unit caseloads
 
 rk1 <-
-  rk %>% 
-  group_by(nn_nid, side) %>% 
-  arrange(nn_nid, side, op_date) %>% 
-  mutate(prev_proc = lag(procedure_type, n=1, default = NA)) %>% 
-  mutate(date_prev = lag(op_date, n=1, default = NA)) %>% 
-  mutate(date_diff = op_date - date_prev) %>% 
-  mutate(toseq = case_when(
-    procedure_type == "Knee Stage 2 of 2 Stage Revision" & date_diff <365 & prev_proc == "Knee Stage 1 of 2 Stage Revision" ~ 0,
-    TRUE ~ 1)) %>%
-  filter(toseq==1) %>%
-  arrange(nn_nid, side, op_date) %>% 
-  group_by(nn_nid, side) %>% 
-  mutate(seq1 = case_when(
-    revno == "No linked primary" ~ 0L,
-    TRUE ~ row_number())) %>% 
-  mutate(revno = seq1) %>% 
-  mutate(revno = case_when(revno >3 ~ 3L, TRUE ~ revno)) %>%
-  ungroup() %>% 
-  select(revision_njr_index_no, revision_procedure_id, revno, seq1)
+  rk[, `:=`(prev_proc = shift(procedure_type, n = 1, fill = NA, type = "lag")), by = .(nn_nid, side)][
+    , `:=`(date_prev = shift(op_date, n = 1, fill = NA, type = "lag")), by = .(nn_nid, side)][
+      , `:=`(date_diff = op_date - date_prev), by = .(nn_nid, side)][
+        , `:=`(toseq = fcase(procedure_type == "Knee Stage 2 of 2 Stage Revision" & date_diff < 365 & prev_proc == "Knee Stage 1 of 2 Stage Revision", 0, rep(TRUE, .N), 1)), by = .(nn_nid, side)][
+          toseq == 1][
+            , `:=`(seq1 = fcase(revno == "No linked primary", 0L, rep(TRUE, .N), seq_len(.N))), by = .(nn_nid, side)][, `:=`(revno = seq1)][
+              , `:=`(revno = fcase(revno > 3, 3L, rep(TRUE, .N), revno))][
+                , .(revision_njr_index_no, revision_procedure_id, revno, seq1)]
 
 rk1$revno <- factor(rk1$revno, levels=c(1,2,3,0), ordered=TRUE, labels = c("First linked rKR", "Second linked rKR", "Third or more linked rKR", "No linked primary"))
 
@@ -158,6 +148,11 @@ rk1$revno <- factor(rk1$revno, levels=c(1,2,3,0), ordered=TRUE, labels = c("Firs
 rk <- rk %>% select(-revno)
 rk <- merge(rk, rk1, by=c("revision_njr_index_no", "revision_procedure_id"), all = TRUE)
 rm(rk1)
+
+# Merge the primary_patient_procedure field on to the revision datasets
+rk <-
+  merge(rk, pk[, c("primary_njr_index_no", "primary_procedure_id", "primary_procedure_type", "primary_patient_procedure")], 
+        by=c("primary_njr_index_no", "primary_procedure_id"), all.x = TRUE)
 
 # Create ifrhier field
 rk <-
@@ -200,7 +195,6 @@ first_rk <-
   ungroup() %>% 
   filter(oppknee==1) %>% 
   select(-oppknee)
-
 
 
 ########################################## Bring NJR tables into DuckDB ##########################################

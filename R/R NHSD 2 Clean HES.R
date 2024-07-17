@@ -17,7 +17,7 @@
 
 ########################################## Packages ##########################################
 
-p_unload(all)
+#p_unload(all)
 pacman::p_load(pacman, data.table, arrow, dplyr, stringi, stringr, tictoc, logger, icd)
 
 # Set threads
@@ -309,7 +309,7 @@ for (i in files){  setwd(paste0(data_dir,"HES/"))
                     rep(TRUE, .N), NA_real_)]
   
   hes[, jr := factor(jr, levels = c(1,2,3,4), ordered=TRUE,
-                     labels = c("Primary Hip Replacement", "Revision Hip Replacement", "Primary Knee Replacement", "Revison Knee Replacement"))]
+                     labels = c("Primary Hip Replacement", "Revision Hip Replacement", "Primary Knee Replacement", "Revision Knee Replacement"))]
   
   # Delete unwanted column(s)
   hes[ ,c("act", "hbp", "kbp", "thr", "thrbp", "tkr", "tkrbp", "rhr", "rhrbp", "rhrbpa", "rkr", "rkrbp", "rkrbpa") := NULL]

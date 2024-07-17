@@ -53,7 +53,23 @@ dbListTables(con)
 # Bring rkhes into environment
 rkhes <- dbGetQuery(con, "SELECT * FROM rk_ons_hes_proms")
 
+# Number of total knee replacements and partial knee replacements
+n_tkrpkr <- nrow(rkhes)
 
+# No partial knee replacements
+n_pkr <- nrow(rkhes %>% 
+                   filter(primary_patient_procedure %in% c("Patello-Femoral Replacement", "Unicompartmental Knee Replacement", "Unicondylar Knee Replacement")))
+
+
+
+########################################## Remove partial knee replacements ##########################################
+
+rkhes <-
+  rkhes %>% 
+  filter(!primary_patient_procedure %in% c("Patello-Femoral Replacement", "Unicompartmental Knee Replacement", "Unicondylar Knee Replacement"))
+
+# Or
+# rkhes <- dbGetQuery(con, "SELECT * FROM rTKA")
 
 ########################################## 1. Implant survivorship ##########################################
 
@@ -198,7 +214,12 @@ first_is <-
 # Survival graphs
 # Edit the KMunicate function for this session only
 trace("KMunicate",edit=TRUE)
-# Change ylim on L81 manually to c(0,0.3)
+# Change ylim on L81 manually to c(0,30)
+# Change L53-55
+# data$surv <- (1 - data$surv) * 100
+# data$lower <- (1 - data$lower) * 100
+# data$upper <- (1 - data$upper) * 100
+
 
 # Plot one survival graph with all the different indications for rKR
 KM <- survfit(Surv(fu, outcome_sa) ~factor(ifrhier2), data=first_is)
@@ -207,7 +228,7 @@ p <- KMunicate(fit = KM, time_scale = time_scale,
           .risk_table = NULL,
           .reverse = TRUE,
           .xlab = "Time (years)",
-          .ylab = "Cumulative incidence of re-revision",
+          .ylab = "Cumulative incidence of re-revision (%)",
           .alpha = 0 # To make confidence intervals completely transparent!
           ) 
 
@@ -227,11 +248,12 @@ for (val in rfr) {
   KMrfr <- survfit(Surv(fu, outcome_sa) ~1, data=KMfilt)
   time_scale <- seq(0, ceiling(max(KMfilt$fu)), by=1)
   p_rfr <- KMunicate(fit = KMrfr, time_scale = time_scale,
+                     .risk_table = "survfit",
                      .risk_table_base_size = 10, # Include a table below graph of number at-risk
                      .rel_heights = c(1, 0.25), # This plots the graph as 100% size, and the table below it as 25% size
                  .reverse = TRUE,
                  .xlab = "Time (years)",
-                 .ylab = "Cumulative incidence of re-revision",
+                 .ylab = "Cumulative incidence of re-revision (%)",
                  .alpha = 0.4)
 
   plotlist = list()
@@ -372,7 +394,10 @@ tbl1 <-
       charl01 = "Charlson comorbidity index",
       bmi_plaus = "Body mass index",
       ethnic5 = "Ethnicity",
-      imd5 = "Index of multiple deprivation")) %>%
+      imd5 = "Index of multiple deprivation"),
+    digits = list(
+      all_categorical() ~ c(0, 0),
+      all_continuous() ~ c(1,1,0,0))) %>%
   add_overall() %>%
   bold_labels() %>%
   italicize_levels()
@@ -738,7 +763,11 @@ tbl4 <-
       q2_eq5d_index = "Post-operative EQ-5D utility",
       eq5d_index_change = "Change in EQ-5D utility",
       q2_satisfaction = "Patient satisfaction",
-      q2_success = "Perceived success")) %>%
+      q2_success = "Perceived success"),
+    digits = list(
+      all_continuous() ~ c(1,1,0,0),
+      all_categorical() ~ c(0, 0),
+      c(q1_eq5d_index,q2_eq5d_index, eq5d_index_change) ~ c(3,3,3,0,0))) %>%
   add_overall() %>%
   bold_labels() %>%
   italicize_levels() %>% 
@@ -781,7 +810,9 @@ tbl6 <-
     statistic = list(
       all_dichotomous() ~ "{n}/{N} ({p}%)"),
     label = list(
-      promyn = "PROM records linked")) %>%
+      promyn = "PROM records linked"),
+    digits = list(
+      all_dichotomous() ~ c(0,0,0))) %>%
   add_overall() %>%
   bold_labels() %>%
   italicize_levels() %>% 
@@ -799,12 +830,11 @@ tbl7_flex <- tbl7 %>% as_flex_table()
 
 # Selected 95% CIs for results
 p_load(Hmisc)
-round(binconf(73, 95, alpha = 0.05),2)
-round(binconf(127, 264, alpha = 0.05),2)
-round(binconf(467, 858, alpha = 0.05),2)
-round(binconf(78, 95, alpha = 0.05),2)
-round(binconf(134, 264, alpha = 0.05),2)
-round(binconf(453, 858, alpha = 0.05),2)
+round(binconf(52, 71, alpha = 0.05),2)
+round(binconf(121, 252, alpha = 0.05),2)
+round(binconf(299, 539, alpha = 0.05),2)
+
+
 
 
 ########################################## Shutdown DuckDB con ##########################################
@@ -838,3 +868,85 @@ for(i in 1:1) {
          file = paste("file",i,".png",sep=""))
 }
 
+
+
+########################################## Export tables ##########################################
+
+setwd(paste0(data_dir,"TABLES/"))
+
+library(officer)
+library(flextable)
+
+## Table 1
+# Create a new Word document
+doc <- read_docx()
+
+# Set document layout to landscape
+doc <- body_end_section_landscape(doc)
+
+# Insert the Flextable object into the Word document
+doc <- body_add_flextable(doc, value = tbl1_flex)
+
+# Save the Word document
+print(doc, target = "Table 1.docx")
+
+
+
+## Table 2
+# Create a new Word document
+doc <- read_docx()
+
+# Set document layout to landscape
+doc <- body_end_section_landscape(doc)
+
+# Insert the Flextable object into the Word document
+doc <- body_add_flextable(doc, value = comb_tbl_flex)
+
+# Save the Word document
+print(doc, target = "Table 2.docx")
+
+
+
+## Table 3
+
+# Create a new Word document
+doc <- read_docx()
+
+# Set document layout to landscape
+doc <- body_end_section_landscape(doc)
+
+# Insert the Flextable object into the Word document
+doc <- body_add_flextable(doc, value = tbl7_flex)
+
+# Save the Word document
+print(doc, target = "Table 3.docx")
+
+
+
+## Appendix C Table 1
+# Create a new Word document
+doc <- read_docx()
+
+# Set document layout to landscape
+doc <- body_end_section_landscape(doc)
+
+# Insert the Flextable object into the Word document
+doc <- body_add_flextable(doc, value = los_flex)
+
+# Save the Word document
+print(doc, target = "App C Table 1.docx")
+
+
+
+## Appendix D Table 1
+# Create a new Word document
+doc <- read_docx()
+
+# Set document layout to landscape
+doc <- body_end_section_landscape(doc)
+
+# Insert the Flextable object into the Word document
+doc <- body_add_flextable(doc, value = tbl5_flex)
+
+# Save the Word document
+print(doc, target = "App D Table 1.docx")

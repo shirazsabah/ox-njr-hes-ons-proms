@@ -36,19 +36,25 @@ dbExecute(con, "DELETE FROM rh_ons WHERE dod < op_date;")
 # Change nn_nid to string, to match nn_nid in HES tables
 dbExecute(con, "ALTER TABLE rh_ons ALTER nn_nid TYPE VARCHAR;")
 
-# Merge to HES
+# Create fields 'start_date' and 'end_date' to provides a tolerance of +/- 1 week for an episode to merge
+dbExecute(con, "ALTER TABLE rh_ons ADD COLUMN start_date DATE;")
+dbExecute(con, "UPDATE rh_ons SET start_date = op_date - 7;")
 
-# Merge to first rHR
+dbExecute(con, "ALTER TABLE rh_ons ADD COLUMN end_date DATE;")
+dbExecute(con, "UPDATE rh_ons SET end_date = op_date + 7;")
+
+# Merge to HES
 dbExecute(con, "CREATE TABLE temp AS
                   SELECT rh_ons.*, hes_working.*
                   FROM rh_ons
                   LEFT OUTER JOIN hes_working
                   ON hes_working.study_id = rh_ons.nn_nid
-                  AND hes_working.admidate_filled >= rh_ons.start
-                  AND hes_working.admidate_filled <= rh_ons.end;")
+                  AND hes_working.admidate_filled >= rh_ons.start_date
+                  AND hes_working.admidate_filled <= rh_ons.end_date;")
 
 
 # Create a date diff field
+dbExecute(con, "ALTER TABLE temp DROP COLUMN date_diff;")
 dbExecute(con, "ALTER TABLE temp ADD COLUMN date_diff INTEGER;")
 dbExecute(con, "UPDATE temp SET date_diff = ABS(op_date - admidate_filled);")
 
@@ -113,7 +119,8 @@ df <- dbGetQuery(con, "SELECT * FROM temp3")
 cci <- df %>% select(revision_njr_index_no, revision_procedure_id, cm5y1, cm5y2, cm5y3, cm5y4, cm5y5, cm5y6, cm5y7, cm5y8, cm5y9, cm5y10, cm5y11, cm5y12, cm5y13, cm5y14, cm5y15, cm5y16, cm5y17)
 
 # Convert logical to numeric
-cci <- cci *1
+cci <- cci %>%
+  mutate(across(everything(), as.numeric))
 cci <- cci %>% mutate(cm5y18 = case_when(cm5y11 >0 & cm5y15 >0 ~ 0,
                                          TRUE ~ cm5y11))
 
@@ -200,19 +207,14 @@ df <- df %>% select(-ETHNIC5)
 # Set BMI <13 and >80 as implausible
 # str(df$bmi)
 
+df$bmi <- as.numeric(df$bmi)
+
 df <-
   df %>% 
   mutate(bmi_plaus = case_when(bmi <13 ~ NA_real_,
                                bmi >80 ~ NA_real_,
                                TRUE ~ bmi))
 
-
-# There are two epikey fields, so it will not write to DuckDB
-df %>% filter(!is.na(`epikey:1`)) %>% count()
-df %>% filter(!is.na(EPIKEY)) %>% count()
-
-# Keep the one with more information, which is the uppercase one
-df <- df %>% select(-`epikey:1`)
 
 ## Convert epikey to character before writing table
 df$EPIKEY <- as.character(df$EPIKEY)
