@@ -14,7 +14,7 @@
 # ########################################## Connect to db ##########################################
 # 
 # p_unload(all)
-# pacman::p_load(pacman, data.table, tidyverse, DBI, duckdb, tictoc, janitor, survival, KMunicate, flextable, gtsummary, stringr, logger)
+pacman::p_load(pacman, data.table, tidyverse, DBI, duckdb, tictoc, janitor, survival, KMunicate, flextable, gtsummary, stringr, logger)
 # 
 # setwd(data_dir)
 # 
